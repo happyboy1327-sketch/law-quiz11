@@ -291,14 +291,10 @@
             allQuizzes = cachedData;
             currentQuizIndex = cachedProgress.index;
             correctCount = cachedProgress.correct;
-            console.log(`✅ 로컬 스토리지에서 퀴즈 로드. 현재 ${currentQuizIndex + 1}번째 문제부터 시작.`);
         } else {
             if (force_reload) {
-                console.log("🔄 새 퀴즈 세트를 API에서 로드합니다.");
                 localStorage.removeItem(STORAGE_KEY_PROGRESS);
                 localStorage.removeItem(STORAGE_KEY_QUIZZES);
-            } else {
-                console.log("🚀 초기 로드: 로컬 데이터가 없으므로 새 퀴즈 세트를 로드합니다.");
             }
     
             questionTextEl.textContent = "🚀 퀴즈 서버에서 새로운 데이터를 불러오는 중...";
@@ -307,14 +303,11 @@
                 if (!response.ok) throw new Error(`HTTP 오류! 상태: ${response.status}`);
     
                 allQuizzes = await response.json();
-                if (allQuizzes.length === 0) throw new Error("서버에서 유효한 퀴즈 데이터를 받지 못했습니다.");
-    
                 currentQuizIndex = 0;
                 correctCount = 0;
     
                 saveQuizzesToLocalStorage();
                 saveProgressToLocalStorage();
-                console.log("✅ API에서 새 퀴즈 로드 및 로컬 스토리지에 저장 완료.");
             } catch (error) {
                 console.error("퀴즈 로드 실패:", error);
                 questionTextEl.textContent = `❌ 퀴즈 로드 실패: ${error.message}`;
@@ -326,11 +319,8 @@
         totalQuizCountEl.textContent = allQuizzes.length;
         correctCountEl.textContent = correctCount;
     
-        // 첫 문제 표시
         if (allQuizzes.length > 0 && currentQuizIndex < allQuizzes.length) {
             showQuiz();
-        } else {
-            console.warn("⚠️ 로드된 퀴즈가 없거나 현재 인덱스가 범위를 벗어남.");
         }
     }
     
@@ -344,7 +334,6 @@
         }
     
         const quiz = allQuizzes[currentQuizIndex];
-        console.log("📌 현재 문제:", quiz);
     
         quizContainerEl.style.display = 'block';
         resultScreenEl.style.display = 'none';
@@ -356,7 +345,7 @@
         currentQuizIndexEl.textContent = currentQuizIndex + 1;
         const lawName = quiz.source_law_name || "법률 상식";
         questionTextEl.innerHTML = `<span style="color: var(--secondary-color);">(${lawName})</span> ${quiz.question}`;
-        
+    
         optionsContainerEl.innerHTML = '';
         quiz.options.forEach((option, index) => {
             const button = document.createElement('button');
@@ -372,15 +361,8 @@
     }
     
     // ========================
-    // --- 다음 문제 / 답 체크 ---
+    // --- 정답/오답 체크 ---
     // ========================
-    nextButtonEl.addEventListener('click', () => {
-        if (!isAnswered) return;
-        currentQuizIndex++;
-        saveProgressToLocalStorage();
-        showQuiz();
-    });
-    
     function checkAnswer(button, quiz) {
         if (isAnswered) return;
         isAnswered = true;
@@ -390,10 +372,20 @@
         saveProgressToLocalStorage();
         correctCountEl.textContent = correctCount;
     
-        explanationAreaEl.textContent = quiz.explanation || "해설이 없습니다.";
+        explanationAreaEl.textContent = isCorrect ? `✅ 정답입니다!\n${quiz.explanation || ""}` : `❌ 오답입니다.\n${quiz.explanation || ""}`;
         explanationAreaEl.style.display = 'block';
         nextButtonEl.style.display = 'inline-block';
     }
+    
+    // ========================
+    // --- 다음 문제 버튼 ---
+    // ========================
+    nextButtonEl.addEventListener('click', () => {
+        if (!isAnswered) return;
+        currentQuizIndex++;
+        saveProgressToLocalStorage();
+        showQuiz();
+    });
     
     // ========================
     // --- 결과 화면 ---
@@ -401,7 +393,8 @@
     function showResults() {
         quizContainerEl.style.display = 'none';
         resultScreenEl.style.display = 'block';
-        resultScreenEl.innerHTML = `<h2>퀴즈 완료!</h2><p>정답 개수: ${correctCount} / ${allQuizzes.length}</p>`;
+        resultScreenEl.innerHTML = `<h2>퀴즈 완료!</h2><p>정답 개수: ${correctCount} / ${allQuizzes.length}</p>
+        <button onclick="resetQuiz()">새 퀴즈 시작</button>`;
     }
     
     // ========================
@@ -427,11 +420,6 @@
     // --- 퀴즈 재시작 ---
     // ========================
     function resetQuiz() {
-        localStorage.removeItem(STORAGE_KEY_PROGRESS);
-        localStorage.removeItem(STORAGE_KEY_QUIZZES);
-        currentQuizIndex = 0;
-        correctCount = 0;
-    
         loadQuizzes(true).catch(error => {
             console.error("퀴즈 재시작 실패:", error);
             alert("퀴즈 재시작에 실패했습니다. 서버 상태를 확인해 주세요.");
@@ -442,6 +430,7 @@
     // --- 초기 로드 ---
     // ========================
     loadQuizzes();
+
     </script>
 </body>
 </html>
