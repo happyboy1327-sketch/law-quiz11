@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // 환경변수 FIREBASE_KEY_JSON 로부터 서비스 계정 JSON 파싱
-const serviceAccount = JSON.parse(process.env.FIREBASE_KEY_JSON);
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
 
 // Firebase 초기화 (중복 방지)
 if (!admin.apps.length) {
