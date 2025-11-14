@@ -3,31 +3,35 @@ import fs from "fs/promises";
 import path from "path";
 import url from "url";
 import dotenv from "dotenv";
+import { generateAndCacheQuizzes } from "./quiz_generator.js";
 
 dotenv.config();
-
 const app = express();
 const __filename = url.fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const PORT = process.env.PORT || 3000;
 const CACHE_FILE_PATH = path.join(__dirname, "cached_law_quizzes.json");
 
-// 정적 파일 (index.html, CSS 등)
+// 정적 파일 제공
 app.use(express.static(path.join(__dirname, "public")));
 
-// ✅ /api/quizzes 라우트 — HTML과 fetch 경로 일치
+// API: 퀴즈 반환
 app.get("/api/quizzes", async (req, res) => {
   try {
+    // 캐시가 없으면 생성
+    try {
+      await fs.access(CACHE_FILE_PATH);
+    } catch {
+      console.log("캐시 없음 → 새 퀴즈 생성");
+      await generateAndCacheQuizzes(CACHE_FILE_PATH);
+    }
+
     const data = await fs.readFile(CACHE_FILE_PATH, "utf-8");
     const quizzes = JSON.parse(data);
-    if (!Array.isArray(quizzes) || quizzes.length === 0) {
-      return res.status(500).json({ error: "퀴즈 데이터가 비어 있습니다." });
-    }
     res.json(quizzes);
   } catch (err) {
-    console.error("🚨 퀴즈 데이터 로드 오류:", err.message);
-    res.status(500).json({ error: "퀴즈 파일을 읽는 데 실패했습니다." });
+    console.error(err);
+    res.status(500).json({ error: "퀴즈 로드 실패" });
   }
 });
 
@@ -35,5 +39,6 @@ app.get("/api/quizzes", async (req, res) => {
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
+
 
 export default app;
