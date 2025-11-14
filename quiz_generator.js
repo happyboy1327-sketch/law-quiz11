@@ -27,6 +27,26 @@ if (!admin.apps.length) {
 }
 const db = admin.firestore(); // Firestore 인스턴스
 
+// ----------------------- 법령 API -----------------------
+async function fetchLawArticles(lawId) {
+    try {
+        const params = { OC: YOUR_OC_USER_ID, type: 'JSON', target: 'eflaw', ID: lawId };
+        const response = await axios.get(LAW_API_BASE_URL, { params });
+        const lawInfo = response.data['법령'];
+        if (!lawInfo?.조문?.조문단위) return [];
+
+        const joData = Array.isArray(lawInfo.조문.조문단위) ? lawInfo.조문.조문단위 : [lawInfo.조문.조문단위];
+        return joData.map(jo => ({
+            num: jo['조문번호'],
+            content: jo['조문내용'],
+            lawName: lawInfo['기본정보']['법령명_한글']
+        }));
+    } catch (err) {
+        console.error(`법령 API 오류 (ID: ${lawId}):`, err.message);
+        return [];
+    }
+}
+
 // ----------------------- AI 퀴즈 생성 -----------------------
 async function generateQuizJson(article) {
     const systemInstruction = `
@@ -56,8 +76,13 @@ JSON 스키마에 맞춰서 출력하십시오.
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: { systemInstruction, responseMimeType: "application/json" }
         });
-        quiz.source_law_name = article.lawName;
-        return JSON.parse(response.text);
+        
+        // AI가 반환한 JSON
+        const raw = JSON.parse(response.text);
+
+        // lawName 포함
+        raw.source_law_name = article.lawName || "법률 상식";
+        return raw;
     } catch (err) {
         console.error("Gemini AI 퀴즈 생성 실패:", err.message || err);
         return null;
@@ -78,28 +103,9 @@ function normalizeQuiz(rawQuiz, id) {
         })),
         answer: rawQuiz.answer,
         explanation: rawQuiz.explanation,
-        timer_sec: rawQuiz.timer_sec || 15
+        timer_sec: rawQuiz.timer_sec || 15,
+        source_law_name: rawQuiz.source_law_name || "법률 상식" // ← 추가
     };
-}
-
-// ----------------------- 법령 API -----------------------
-async function fetchLawArticles(lawId) {
-    try {
-        const params = { OC: YOUR_OC_USER_ID, type: 'JSON', target: 'eflaw', ID: lawId };
-        const response = await axios.get(LAW_API_BASE_URL, { params });
-        const lawInfo = response.data['법령'];
-        if (!lawInfo?.조문?.조문단위) return [];
-
-        const joData = Array.isArray(lawInfo.조문.조문단위) ? lawInfo.조문.조문단위 : [lawInfo.조문.조문단위];
-        return joData.map(jo => ({
-            num: jo['조문번호'],
-            content: jo['조문내용'],
-            lawName: lawInfo['기본정보']['법령명_한글']
-        }));
-    } catch (err) {
-        console.error(`법령 API 오류 (ID: ${lawId}):`, err.message);
-        return [];
-    }
 }
 
 // ----------------------- 메인 함수 -----------------------
