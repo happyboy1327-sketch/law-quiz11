@@ -502,16 +502,20 @@
              showResults();
         }
 
-        // --- 퀴즈 초기화 (새 퀴즈 로드) ---
         function resetQuiz() {
-            // 🎯 로컬 스토리지를 지우지 않고, loadQuizzes에 강제 로드 플래그(true)를 전달하여 새 퀴즈를 API에서 로드합니다.
-            loadQuizzes(true).then(() => { 
-                showQuiz(); // 새 퀴즈를 로드한 후 첫 번째 문제 표시
-            }).catch(error => {
+            // 1. 진행 기록 초기화
+            localStorage.removeItem(STORAGE_KEY_PROGRESS);
+            localStorage.removeItem(STORAGE_KEY_QUIZZES);
+            currentQuizIndex = 0;
+            correctCount = 0;
+        
+            // 2. 새 퀴즈 로드
+            loadQuizzes(true).catch(error => {
                 console.error("퀴즈 재시작 실패:", error);
                 alert("퀴즈 재시작에 실패했습니다. 서버 상태를 확인해 주세요.");
             });
         }
+
 
 
         // --- 이벤트 리스너 등록 ---
