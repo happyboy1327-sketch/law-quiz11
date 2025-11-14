@@ -56,6 +56,7 @@ JSON 스키마에 맞춰서 출력하십시오.
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             config: { systemInstruction, responseMimeType: "application/json" }
         });
+        quiz.source_law_name = article.lawName;
         return JSON.parse(response.text);
     } catch (err) {
         console.error("Gemini AI 퀴즈 생성 실패:", err.message || err);
@@ -78,7 +79,6 @@ function normalizeQuiz(rawQuiz, id) {
         answer: rawQuiz.answer,
         explanation: rawQuiz.explanation,
         timer_sec: rawQuiz.timer_sec || 15
-        source_law_name: rawQuiz.lawName || "법률 상식" 
     };
 }
 
