@@ -2,194 +2,267 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>법률 상식 퀴즈</title>
-<style>
-body { font-family: Arial, sans-serif; margin: 20px; background:#f0f0f0; }
-#quiz-container { position: relative; border: 1px solid #ccc; padding: 20px; border-radius: 8px; max-width: 700px; margin: auto; background:#fff; }
-#review-button { position: absolute; top: 10px; left: 10px; padding:5px 10px; cursor:pointer; }
-#timer { position: absolute; top: 10px; right: 10px; font-weight:bold; }
-#wrong-count { position: absolute; top: 40px; left: 10px; font-weight:bold; color:red; }
-.option-button { display: block; width: 100%; margin: 5px 0; padding: 8px; border-radius: 4px; cursor: pointer; border:1px solid #ccc; text-align:left; }
-.option-button.correct { background-color: #4caf50; color:#fff; }
-.option-button.wrong { background-color: #f44336; color:#fff; }
-#explanation-area { margin-top: 10px; font-weight:bold; }
-#next-button { margin-top: 10px; padding: 8px 12px; cursor: pointer; }
-#review-modal { display:none; position:fixed; top:10%; left:50%; transform:translateX(-50%); width:80%; max-width:600px; background:white; border:1px solid #ccc; padding:20px; z-index:1000; max-height:80%; overflow-y:auto; border-radius:8px; }
-#review-modal h3 { margin-top:0; }
-.review-item { display:block; width:100%; margin:5px 0; padding:5px; text-align:left; cursor:pointer; border:1px solid #ddd; border-radius:4px; background:#f9f9f9; }
-.review-item:hover { background:#eee; }
-</style>
-</head>
-<body>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+<title>법률 퀴즈</title>
 
-<div id="quiz-container">
-    <button id="review-button">오답 복습</button>
-    <span id="timer">0</span>
-    <span id="wrong-count">오답: 0</span>
-    <div id="question-text"></div>
-    <div id="options-container"></div>
-    <div id="explanation-area"></div>
-    <button id="next-button">다음 문제</button>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body {
+    font-family: 'Inter', 'Noto Sans KR', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f0f2f5;
+    -webkit-text-size-adjust: 100%; /* iOS 크기 조정 방지 */
+    -ms-text-size-adjust: 100%; /* IE/Edge 방지 */
+}
+button { touch-action: manipulation; } /* 모바일 터치 개선 */
+.option-button { min-height: 3rem; } /* 터치 영역 확보 */
+.modal-overlay {
+    background-color: rgba(0,0,0,0.5);
+    transition: opacity 0.3s ease-in-out;
+}
+</style>
+<script>
+tailwind.config = {
+    theme: {
+        extend: {
+            colors: {
+                'primary': '#1976d2',
+                'primary-dark': '#1565c0',
+                'correct': '#4caf50',
+                'wrong': '#f44336',
+                'bg-light': '#f0f2f5',
+            }
+        }
+    }
+}
+</script>
+</head>
+<body class="bg-bg-light min-h-screen p-4 flex justify-center items-start">
+
+<!-- 퀴즈 컨테이너 -->
+<div id="quiz-container" class="max-w-xl w-full mx-auto mt-5 p-6 md:p-8 bg-white rounded-xl shadow-2xl relative border border-gray-100">
+    <div class="flex justify-between items-center mb-4 relative h-10">
+        <button id="review-button" class="px-3 py-1 text-sm font-semibold text-white bg-primary hover:bg-primary-dark rounded-lg transition duration-200 shadow-md">
+            오답 복습
+        </button>
+        <div class="flex flex-col items-end space-y-1">
+            <div id="timer" class="text-xl font-bold text-gray-700">0</div>
+            <div id="wrong-count" class="text-sm font-semibold text-wrong">오답: 0</div>
+        </div>
+    </div>
+    
+    <div id="question-text" class="mt-8 mb-6 text-lg font-medium text-gray-800 leading-relaxed min-h-[4rem]">
+        {질문이 여기에 표시됩니다.}
+    </div>
+    
+    <div id="options-container" class="space-y-3"></div>
+
+    <div id="explanation-area" class="mt-4 p-4 text-sm bg-blue-50 border-l-4 border-primary rounded-lg text-gray-700 hidden transition-all duration-300">
+        해설이 여기에 표시됩니다.
+    </div>
+
+    <button id="next-button" class="w-full mt-6 py-3 border-none rounded-lg bg-primary text-white text-base font-semibold cursor-pointer hover:bg-primary-dark transition duration-200 shadow-lg hover:shadow-xl">
+        다음 문제
+    </button>
 </div>
 
-<div id="result-screen" style="display:none;"></div>
-
-<div id="review-modal">
-    <h3>오답 복습</h3>
-    <div id="review-list"></div>
-    <button id="close-review">닫기</button>
+<!-- 오답 복습 모달 -->
+<div id="review-modal" class="fixed inset-0 flex items-center justify-center modal-overlay opacity-0 pointer-events-none z-50 transition duration-300">
+    <div class="bg-white rounded-xl w-11/12 max-w-2xl max-h-[80vh] overflow-y-auto p-6 shadow-2xl transform scale-95 transition-transform duration-300">
+        <h2 class="text-xl font-bold mb-4 border-b pb-2 text-gray-800">오답 복습 목록</h2>
+        <div id="review-list" class="space-y-3"></div>
+        <button id="review-close" class="mt-6 w-full py-2 bg-wrong text-white font-semibold rounded-lg hover:bg-red-700 transition duration-200 shadow-md">
+            닫기
+        </button>
+    </div>
 </div>
 
 <script>
-const QUIZ_API_URL = "/api/quizzes";
-const STORAGE_KEY_QUIZZES = "law_quizzes_data";
-const STORAGE_KEY_PROGRESS = "law_quizzes_progress";
-const STORAGE_KEY_WRONG = "law_quizzes_wrong";
+// ======= 로컬 스토리지/퀴즈 상태 =======
+const STORAGE_KEY_QUIZZES="quiz_data";
+const STORAGE_KEY_PROGRESS="quiz_progress";
+const QUIZ_API_URL="/api/quizzes";
 
-let allQuizzes = [];
-let currentQuizIndex = 0;
-let correctCount = 0;
-let wrongQuizzes = [];
-let isAnswered = false;
+let allQuizzes=[], currentQuizIndex=0, correctCount=0, wrongQuizzes=[];
+let timerInterval;
 
-// DOM
-const quizContainerEl = document.getElementById("quiz-container");
-const questionTextEl = document.getElementById("question-text");
-const optionsContainerEl = document.getElementById("options-container");
-const nextButtonEl = document.getElementById("next-button");
-const timerEl = document.getElementById("timer");
-const wrongCountEl = document.getElementById("wrong-count");
-const explanationAreaEl = document.getElementById("explanation-area");
-const reviewButtonEl = document.getElementById("review-button");
-const reviewModalEl = document.getElementById("review-modal");
-const reviewListEl = document.getElementById("review-list");
-const closeReviewButtonEl = document.getElementById("close-review");
-const resultScreenEl = document.getElementById("result-screen");
+const questionTextEl=document.getElementById("question-text");
+const optionsContainerEl=document.getElementById("options-container");
+const explanationAreaEl=document.getElementById("explanation-area");
+const nextButtonEl=document.getElementById("next-button");
+const reviewButtonEl=document.getElementById("review-button");
+const reviewModalEl=document.getElementById("review-modal");
+const reviewListEl=document.getElementById("review-list");
+const reviewCloseEl=document.getElementById("review-close");
+const timerEl=document.getElementById("timer");
+const wrongCountEl=document.getElementById("wrong-count");
 
-// ------------------ 로컬 스토리지 ------------------
-function loadQuizzesFromLocalStorage(){const data=localStorage.getItem(STORAGE_KEY_QUIZZES);return data?JSON.parse(data):null;}
-function saveQuizzesToLocalStorage(){localStorage.setItem(STORAGE_KEY_QUIZZES,JSON.stringify(allQuizzes));}
-function loadProgressFromLocalStorage(){const data=localStorage.getItem(STORAGE_KEY_PROGRESS);return data?JSON.parse(data):null;}
-function saveProgressToLocalStorage(){localStorage.setItem(STORAGE_KEY_PROGRESS,JSON.stringify({index:currentQuizIndex,correct:correctCount,total:allQuizzes.length}));}
-function loadWrongFromLocalStorage(){const data=localStorage.getItem(STORAGE_KEY_WRONG);return data?JSON.parse(data):[];}
-function saveWrongToLocalStorage(){localStorage.setItem(STORAGE_KEY_WRONG,JSON.stringify(wrongQuizzes));}
+function showModal(){reviewModalEl.classList.remove('opacity-0','pointer-events-none'); reviewModalEl.children[0].classList.remove('scale-95'); reviewModalEl.children[0].classList.add('scale-100');}
+function hideModal(){reviewModalEl.classList.add('opacity-0','pointer-events-none'); reviewModalEl.children[0].classList.remove('scale-100'); reviewModalEl.children[0].classList.add('scale-95');}
 
-// ------------------ 오답 리스트 렌더 ------------------
-function renderWrongList(){
-    reviewListEl.innerHTML="";
-    if(wrongQuizzes.length===0){const emptyMsg=document.createElement("p");emptyMsg.textContent="오답이 없습니다.";reviewListEl.appendChild(emptyMsg);return;}
-    wrongQuizzes.forEach((quiz,idx)=>{
-        const item=document.createElement("div");
-        item.className="review-item";
-        const lawName=quiz.source_law_name||"법률 상식";
-        let html=`<strong>${idx+1}. (${lawName}) ${quiz.question}</strong><br>`;
-        quiz.options.forEach((opt,i)=>{
-            html+=`${i+1}) ${opt.text} ${opt.is_correct?"✅":"❌"}<br>`;
-        });
-        html+=`<em>해설: ${quiz.explanation||""}</em>`;
-        item.innerHTML=html;
-        item.addEventListener("click",()=>{
-            currentQuizIndex=allQuizzes.findIndex(q=>q.id===quiz.id);
-            reviewModalEl.style.display="none";
-            showQuiz();
-        });
-        reviewListEl.appendChild(item);
-    });
-    wrongCountEl.textContent=`오답: ${wrongQuizzes.length}`;
-}
+function saveQuizzesToLocalStorage(){localStorage.setItem(STORAGE_KEY_QUIZZES, JSON.stringify(allQuizzes));}
+function saveProgressToLocalStorage(){localStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify({index:currentQuizIndex, correct:correctCount, total:allQuizzes.length}));}
+function loadQuizzesFromLocalStorage(){return JSON.parse(localStorage.getItem(STORAGE_KEY_QUIZZES)||"null");}
+function loadProgressFromLocalStorage(){return JSON.parse(localStorage.getItem(STORAGE_KEY_PROGRESS)||"null");}
 
-// ------------------ 퀴즈 로드 ------------------
 async function loadQuizzes(force_reload=false){
-    wrongQuizzes=loadWrongFromLocalStorage();
-    renderWrongList();
     const cachedData=loadQuizzesFromLocalStorage();
     const cachedProgress=loadProgressFromLocalStorage();
+
     if(cachedData && cachedProgress && cachedData.length===cachedProgress.total && !force_reload){
-        allQuizzes=cachedData;currentQuizIndex=cachedProgress.index;correctCount=cachedProgress.correct;
-    }else{
+        allQuizzes=cachedData;
+        currentQuizIndex=cachedProgress.index;
+        correctCount=cachedProgress.correct;
+        showQuiz();
+        updateWrongCount();
+    } else {
         questionTextEl.textContent="🚀 퀴즈 서버에서 새로운 데이터를 불러오는 중...";
         try{
-            const response=await fetch(QUIZ_API_URL,{cache:"no-store"});
-            if(!response.ok)throw new Error(`HTTP 오류! 상태: ${response.status}`);
-            allQuizzes=await response.json();currentQuizIndex=0;correctCount=0;
-            saveQuizzesToLocalStorage();saveProgressToLocalStorage();
-        }catch(error){console.error("퀴즈 로드 실패:",error);questionTextEl.textContent=`❌ 퀴즈 로드 실패: ${error.message}`;timerEl.textContent="오류";return;}
+            const response=await fetch(QUIZ_API_URL, {cache:"no-store"});
+            if(!response.ok) throw new Error(`HTTP 오류! 상태: ${response.status}`);
+            allQuizzes=await response.json();
+            if(allQuizzes.length===0) throw new Error("서버에서 유효한 퀴즈 데이터를 받지 못했습니다.");
+            currentQuizIndex=0; correctCount=0;
+            saveQuizzesToLocalStorage();
+            saveProgressToLocalStorage();
+            showQuiz();
+            updateWrongCount();
+        }catch(err){
+            console.error("퀴즈 로드 실패:",err);
+            questionTextEl.textContent=`❌ 퀴즈 로드 실패: ${err.message}`;
+            timerEl.textContent="오류";
+        }
     }
-    showQuiz();
 }
 
-// ------------------ 퀴즈 표시 ------------------
+// ======= 퀴즈 표시 =======
 function showQuiz(){
-    if(currentQuizIndex>=allQuizzes.length){showResults();return;}
+    clearInterval(timerInterval);
     const quiz=allQuizzes[currentQuizIndex];
-    quizContainerEl.style.display='block';resultScreenEl.style.display='none';isAnswered=false;nextButtonEl.style.display='none';explanationAreaEl.style.display='none';
-    const lawName=quiz.source_law_name||"법률 상식";
-    questionTextEl.innerHTML=`<span style="color: var(--secondary-color);">(${lawName})</span> ${quiz.question}`;
-    optionsContainerEl.innerHTML='';
-    quiz.options.forEach((option,index)=>{
-        const button=document.createElement('button');
-        button.className='option-button';
-        button.textContent=`${index+1}. ${option.text}`;
-        button.dataset.isCorrect=option.is_correct;
-        button.addEventListener('click',()=>checkAnswer(button,quiz));
-        optionsContainerEl.appendChild(button);
+    if(!quiz){ console.warn("퀴즈 없음"); return; }
+
+    questionTextEl.innerHTML=`<span class="text-sm font-light text-gray-500 mr-2">[${currentQuizIndex+1}/${allQuizzes.length}]</span><span class="text-primary font-bold mr-2">(${quiz.source_law_name})</span> ${quiz.question}`;
+    optionsContainerEl.innerHTML="";
+    explanationAreaEl.classList.add("hidden"); explanationAreaEl.textContent="";
+    nextButtonEl.disabled=true; nextButtonEl.classList.add("opacity-50","cursor-not-allowed"); nextButtonEl.classList.remove("hover:bg-primary-dark");
+
+    quiz.options.forEach((opt,index)=>{
+        const btn=document.createElement("button");
+        btn.className="option-button w-full text-left p-4 border border-gray-300 rounded-xl cursor-pointer bg-white hover:bg-gray-50 transition duration-150 shadow-sm text-gray-700 font-medium";
+        btn.textContent=`${index+1}. ${opt.text}`;
+        btn.dataset.isCorrect=opt.is_correct;
+        btn.addEventListener("click",()=>checkAnswer(btn,quiz));
+        optionsContainerEl.appendChild(btn);
     });
-    startTimer(quiz.timer_sec||15);
+    startTimer(quiz.timer_sec);
 }
 
-// ------------------ 정답/오답 체크 ------------------
-function checkAnswer(button,quiz){
-    if(isAnswered)return;isAnswered=true;
-    const isCorrect=button.dataset.isCorrect==="true";
-    if(isCorrect){correctCount++;button.classList.add("correct");}
-    else{button.classList.add("wrong");if(!wrongQuizzes.find(q=>q.id===quiz.id))wrongQuizzes.push(quiz);}
-    const allButtons=Array.from(optionsContainerEl.children);
-    allButtons.forEach(btn=>{if(btn.dataset.isCorrect==="true")btn.classList.add("correct");});
-    explanationAreaEl.textContent=isCorrect?`✅ 정답!\n${quiz.explanation||""}`:`❌ 오답!\n${quiz.explanation||""}`;
-    explanationAreaEl.style.display='block';
-    nextButtonEl.style.display='inline-block';
-    saveProgressToLocalStorage();saveWrongToLocalStorage();
-    renderWrongList();
+// ======= 정답/오답 체크 =======
+function checkAnswer(btn,quiz){
+    clearInterval(timerInterval);
+    const correct = btn.dataset.isCorrect==="true";
+    quiz.selectedAnswer = btn.textContent.replace(/^\d+\.\s*/,"");
+
+    Array.from(optionsContainerEl.children).forEach(b=>{
+        b.disabled=true; b.classList.add("cursor-default"); b.classList.remove("hover:bg-gray-50");
+        if(b.dataset.isCorrect==="true"){
+            b.classList.add("bg-correct","text-white","border-correct","shadow-md"); b.classList.remove("bg-white","text-gray-700","border-gray-300");
+        } else if(b!==btn){
+            b.classList.add("bg-gray-100","text-gray-400","border-gray-200"); b.classList.remove("bg-white","text-gray-700");
+        }
+    });
+
+    if(!correct){
+        btn.classList.add("bg-wrong","text-white","border-wrong","shadow-md");
+        btn.classList.remove("bg-white","text-gray-700","border-gray-300");
+        if(!wrongQuizzes.some(q=>q.id===quiz.id)) wrongQuizzes.push(quiz);
+    } else correctCount++;
+
+    explanationAreaEl.textContent=quiz.explanation;
+    explanationAreaEl.classList.remove("hidden");
+    nextButtonEl.disabled=false;
+    nextButtonEl.classList.remove("opacity-50","cursor-not-allowed"); nextButtonEl.classList.add("hover:bg-primary-dark");
+
+    updateWrongCount();
+    saveProgressToLocalStorage();
 }
 
-// ------------------ 다음 문제 ------------------
-nextButtonEl.addEventListener('click',()=>{
-    if(!isAnswered)return;currentQuizIndex++;showQuiz();
+// ======= 오답 카운트 =======
+function updateWrongCount(){ wrongCountEl.textContent=`오답: ${wrongQuizzes.length}`; }
+
+nextButtonEl.addEventListener("click",()=>{
+    currentQuizIndex++;
+    if(currentQuizIndex<allQuizzes.length) showQuiz();
+    else {
+        const total=allQuizzes.length;
+        const finalMessage=`퀴즈 완료! 🎉 총 ${total}문제 중 ${correctCount}문제를 맞혔습니다. 오답 ${wrongQuizzes.length}개.`;
+        explanationAreaEl.textContent=finalMessage;
+        explanationAreaEl.classList.remove("hidden","bg-blue-50","border-primary");
+        explanationAreaEl.classList.add("bg-yellow-100","border-yellow-500","text-center","font-bold","text-lg");
+        nextButtonEl.classList.add("hidden");
+    }
 });
 
-// ------------------ 결과 화면 ------------------
-function showResults(){
-    quizContainerEl.style.display='none';resultScreenEl.style.display='block';
-    resultScreenEl.innerHTML=`<h2>퀴즈 완료!</h2><p>정답: ${correctCount} / ${allQuizzes.length}</p>
-        <button onclick="resetQuiz()">새 퀴즈 시작</button>
-        ${wrongQuizzes.length>0?`<button onclick="reviewModalEl.style.display='block';renderWrongList();">오답 복습</button>`:""}`;
-}
+// ======= 오답 복습 모달 =======
+reviewButtonEl.addEventListener("click",()=>{
+    reviewListEl.innerHTML="";
+    if(wrongQuizzes.length===0){ reviewListEl.innerHTML='<p class="text-center text-gray-500 py-4">아직 틀린 문제가 없습니다.</p>'; showModal(); return; }
 
-// ------------------ 타이머 ------------------
-let timerInterval;
-function startTimer(seconds){
-    clearInterval(timerInterval);
-    let remaining=seconds;timerEl.textContent=remaining;
+    wrongQuizzes.forEach((q,index)=>{
+        const div=document.createElement("div");
+        div.className="review-item p-4 border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition duration-150 cursor-pointer shadow-sm";
+        div.innerHTML=`
+            <p class="text-sm font-light text-gray-500 mb-1">복습 #${index+1}</p>
+            <p class="font-bold text-gray-800 mb-2"><span class="text-primary">(${q.source_law_name})</span> ${q.question}</p>
+            <p class="text-sm"><span class="font-semibold text-wrong">내 선택:</span> ${q.selectedAnswer || "(선택 없음)"}</p>
+            <p class="text-sm"><span class="font-semibold text-correct">정답:</span> ${q.answer}</p>
+            <div class="mt-3 p-2 text-xs bg-blue-100 border-l-2 border-primary rounded text-gray-700"><span class="font-bold">해설:</span> ${q.explanation}</div>
+        `;
+        div.addEventListener("click",()=>{
+            currentQuizIndex=allQuizzes.indexOf(allQuizzes.find(item=>item.id===q.id));
+            showQuiz(); hideModal();
+        });
+        reviewListEl.appendChild(div);
+    });
+    showModal();
+});
+
+reviewCloseEl.addEventListener("click",()=>{ hideModal(); });
+reviewModalEl.addEventListener("click",(e)=>{if(e.target===reviewModalEl) hideModal();});
+
+// ======= 타이머 =======
+function startTimer(sec){
+    timerEl.textContent=sec; clearInterval(timerInterval);
     timerInterval=setInterval(()=>{
-        remaining--;
-        timerEl.textContent=remaining;
-        if(remaining<=0){clearInterval(timerInterval);nextButtonEl.style.display='inline-block';}
+        sec--;
+        if(sec<0){
+            clearInterval(timerInterval);
+            const quiz=allQuizzes[currentQuizIndex];
+            if(!quiz.selectedAnswer && !wrongQuizzes.some(q=>q.id===quiz.id)) wrongQuizzes.push(quiz);
+            Array.from(optionsContainerEl.children).forEach(b=>{
+                b.disabled=true; b.classList.add("cursor-default"); b.classList.remove("hover:bg-gray-50");
+                if(b.dataset.isCorrect==="true"){b.classList.add("bg-correct","text-white","border-correct","shadow-md"); b.classList.remove("bg-white","text-gray-700","border-gray-300");}
+                else {b.classList.add("bg-gray-100","text-gray-400","border-gray-200"); b.classList.remove("bg-white","text-gray-700");}
+            });
+            quiz.selectedAnswer="(시간 초과)";
+            explanationAreaEl.textContent=`시간 초과! 정답 해설: ${quiz.explanation}`;
+            explanationAreaEl.classList.remove("hidden","bg-blue-50","border-primary");
+            explanationAreaEl.classList.add("bg-red-100","border-wrong");
+            nextButtonEl.disabled=false;
+            nextButtonEl.classList.remove("opacity-50","cursor-not-allowed","hidden");
+            nextButtonEl.classList.add("hover:bg-primary-dark");
+            updateWrongCount();
+            saveProgressToLocalStorage();
+            return;
+        }
+        timerEl.textContent=sec;
+        if(sec<=5) timerEl.classList.add("text-wrong"); else timerEl.classList.remove("text-wrong");
     },1000);
 }
 
-// ------------------ 새 퀴즈 시작 ------------------
-function resetQuiz(){
-    // 기존 오답 기록 유지
-    loadQuizzes(true);
-}
-
-// ------------------ 리뷰 모달 ------------------
-closeReviewButtonEl.addEventListener("click",()=>{reviewModalEl.style.display="none";});
-reviewButtonEl.addEventListener("click",()=>{reviewModalEl.style.display="block";renderWrongList();});
-
-// ------------------ 초기 로드 ------------------
-loadQuizzes();
+window.onload=()=>loadQuizzes();
 </script>
-
 </body>
 </html>
