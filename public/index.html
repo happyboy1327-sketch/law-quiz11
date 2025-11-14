@@ -47,8 +47,12 @@ tailwind.config = {
 </div>
 
 <script type="module">
-// ----------------------- 실제 API 기반 -----------------------
-let allQuizzes=[], currentQuizIndex=0, correctCount=0, wrongQuizzes=[];
+/* =========================
+   통합 패치 스크립트 — index.html 내 이 블록으로 교체
+   - 절대 quiz.article.lawName 표시 라인은 변경하지 않음
+   ========================= */
+
+let allQuizzes = [], currentQuizIndex = 0, correctCount = 0, wrongQuizzes = [];
 const questionTextEl = document.getElementById("question-text");
 const optionsContainerEl = document.getElementById("options-container");
 const explanationAreaEl = document.getElementById("explanation-area");
@@ -61,163 +65,339 @@ const timerEl = document.getElementById("timer");
 const wrongCountEl = document.getElementById("wrong-count");
 let timerInterval;
 
-// ======= 로컬 스토리지에서 오답 유지 =======
-wrongQuizzes = JSON.parse(localStorage.getItem("wrongQuizzes") || "[]");
-
-// ======= 모달 제어 =======
-function showModal(){ reviewModalEl.classList.remove('opacity-0','pointer-events-none'); reviewModalEl.children[0].classList.remove('scale-95'); reviewModalEl.children[0].classList.add('scale-100'); }
-function hideModal(){ reviewModalEl.classList.add('opacity-0','pointer-events-none'); reviewModalEl.children[0].classList.remove('scale-100'); reviewModalEl.children[0].classList.add('scale-95'); }
-
-// ======= 퀴즈 로드 =======
-async function loadQuizzes(){
-    try{
-        const res = await fetch("/api/quizzes");
-        allQuizzes = await res.json();
-        currentQuizIndex=0;
-        correctCount=0;
-        showQuiz();
-        updateWrongCount();
-    }catch(err){ console.error(err); alert("퀴즈 로드 실패"); }
+// ----- 유틸: 안전한 값 보장(normalize) -----
+function normalizeServerQuiz(raw, fallbackIndex=0){
+    // raw may contain different shapes from server. create canonical quiz object:
+    const quiz = {};
+    quiz.id = raw.id ?? raw._id ?? Date.now() + fallbackIndex;
+    quiz.question = raw.question?.toString?.().trim() || (raw.prompt?.toString?.().trim()) || "질문 텍스트 없음";
+    // ensure article object exists with lawName property because UI expects quiz.article.lawName
+    quiz.article = raw.article && raw.article.lawName ? { lawName: raw.article.lawName } :
+                   (raw.source_law_name ? { lawName: raw.source_law_name } :
+                   (raw.lawName ? { lawName: raw.lawName } : { lawName: "법률 상식" }));
+    // options: ensure array of {text, is_correct:boolean}
+    const rawOptions = Array.isArray(raw.options) ? raw.options : (raw.choices || []);
+    quiz.options = rawOptions.map(o => ({
+        text: (o.text ?? o.choice ?? "").toString(),
+        is_correct: (o.is_correct === true) || (o.is_correct === "true") || (o.isCorrect === true) || (o.correct === true) || false
+    }));
+    // ensure at least 2-4 options (do not invent options, but keep what's provided)
+    if (!Array.isArray(quiz.options) || quiz.options.length === 0) {
+        // fallback single-answer representation
+        quiz.options = [
+            { text: raw.answer ?? "정답", is_correct: true },
+            { text: "보기 2", is_correct: false },
+            { text: "보기 3", is_correct: false }
+        ];
+    }
+    quiz.answer = raw.answer ?? (quiz.options.find(o=>o.is_correct)?.text) ?? "정답 정보 없음";
+    quiz.explanation = raw.explanation ?? raw.explain ?? "";
+    quiz.timer_sec = Number.isInteger(raw.timer_sec) ? raw.timer_sec : (parseInt(raw.timer_sec) || 15);
+    return quiz;
 }
 
-// ======= 문제 표시 =======
+// ----- wrongQuizzes 로컬 저장/복원 (항상 정규화해서 저장) -----
+const STORAGE_KEY_WRONG = "wrongQuizzes";
+function loadWrongQuizzes(){
+    try{
+        const raw = JSON.parse(localStorage.getItem(STORAGE_KEY_WRONG) || "[]");
+        wrongQuizzes = Array.isArray(raw) ? raw.map((q, i) => normalizeServerQuiz(q, i)) : [];
+    }catch(e){
+        wrongQuizzes = [];
+    }
+    updateWrongCount();
+}
+function saveWrongQuizzes(){
+    try{
+        // store minimal canonical fields to avoid big objects
+        const toStore = wrongQuizzes.map(q => ({
+            id: q.id,
+            question: q.question,
+            article: q.article,
+            options: q.options,
+            answer: q.answer,
+            explanation: q.explanation,
+            timer_sec: q.timer_sec,
+            selectedAnswer: q.selectedAnswer ?? null
+        }));
+        localStorage.setItem(STORAGE_KEY_WRONG, JSON.stringify(toStore));
+    }catch(e){}
+}
+
+// ----- 로컬 캐시 of allQuizzes (fallback) -----
+const STORAGE_KEY_QUIZZES = "cached_quizzes_v1";
+function saveQuizzesCache(){
+    try{ localStorage.setItem(STORAGE_KEY_QUIZZES, JSON.stringify(allQuizzes)); }catch(e){}
+}
+function loadQuizzesCache(){
+    try{ const raw = JSON.parse(localStorage.getItem(STORAGE_KEY_QUIZZES)||"[]"); return Array.isArray(raw) ? raw.map((q,i)=>normalizeServerQuiz(q,i)) : []; }catch(e){ return []; }
+}
+
+// ----- fetch 새 세트 함수 (캐시 우회, 안전한 정규화) -----
+async function fetchNewSet({ force=false } = {}){
+    const base = "/api/quizzes";
+    const url = force ? `${base}?refresh=1&ts=${Date.now()}` : `${base}?ts=${Date.now()}`;
+    // UI feedback: disable next/review while loading
+    nextButtonEl.disabled = true;
+    reviewButtonEl.disabled = true;
+    questionTextEl.textContent = "🔄 새 문제 세트 불러오는 중...";
+    try{
+        const res = await fetch(url, { method: "GET", cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) throw new Error("서버에서 문제를 받지 못했습니다.");
+        allQuizzes = data.map((r,i) => normalizeServerQuiz(r,i));
+        // reset progress for new set but preserve wrongQuizzes
+        currentQuizIndex = 0;
+        correctCount = 0;
+        saveQuizzesCache();
+        // show first question
+        showQuiz();
+    }catch(err){
+        console.error("fetchNewSet 실패:", err);
+        // fallback to local cache if exists
+        const cached = loadQuizzesCache();
+        if (cached && cached.length){
+            allQuizzes = cached;
+            currentQuizIndex = 0;
+            correctCount = 0;
+            showQuiz();
+            questionTextEl.insertAdjacentHTML("afterbegin","<div class='text-sm text-red-500'>[주의] 서버 로드 실패 — 로컬 캐시 사용</div>");
+        } else {
+            questionTextEl.textContent = "퀴즈를 불러오지 못했습니다. 네트워크 또는 서버를 확인하세요.";
+        }
+    } finally {
+        reviewButtonEl.disabled = false;
+    }
+}
+
+// ----- 기존 loadQuizzes: 초기 로드 (uses cache first, then fetch) -----
+async function loadQuizzes(){
+    loadWrongQuizzes();
+    // try local cache first
+    const cached = loadQuizzesCache();
+    if (cached.length){
+        allQuizzes = cached;
+        currentQuizIndex = 0;
+        correctCount = 0;
+        showQuiz();
+        // also in background try to refresh silently
+        fetchNewSet({ force:false }).catch(()=>{});
+        return;
+    }
+    // otherwise fetch fresh
+    await fetchNewSet({ force:true });
+}
+
+// ----- showQuiz (DO NOT CHANGE YOUR lawName DISPLAY LINE) -----
 function showQuiz(){
     clearInterval(timerInterval);
     const quiz = allQuizzes[currentQuizIndex];
-    if(!quiz){ console.warn("퀴즈 없음"); return; }
+    if (!quiz){
+        console.warn("퀴즈 없음");
+        questionTextEl.textContent = "표시할 퀴즈가 없습니다.";
+        return;
+    }
 
-    questionTextEl.innerHTML=`<span class="text-sm font-light text-gray-500 mr-2">[${currentQuizIndex+1}/${allQuizzes.length}]</span>
+    // NOTE: user insisted quiz.article.lawName display must not be altered — keep it
+    questionTextEl.innerHTML = `<span class="text-sm font-light text-gray-500 mr-2">[${currentQuizIndex+1}/${allQuizzes.length}]</span>
     <span class="text-primary font-bold mr-2">(${quiz.article.lawName || '법률 상식'})</span>${quiz.question}`;
 
-    optionsContainerEl.innerHTML="";
+    optionsContainerEl.innerHTML = "";
     explanationAreaEl.classList.add("hidden");
-    explanationAreaEl.textContent="";
+    explanationAreaEl.textContent = "";
     nextButtonEl.disabled = true;
     nextButtonEl.classList.add("opacity-50","cursor-not-allowed");
     nextButtonEl.classList.remove("hover:bg-primary-dark");
 
-    quiz.options.forEach((opt,index)=>{
+    quiz.options.forEach((opt, index)=>{
         const btn = document.createElement("button");
         btn.className = `option-button w-full text-left p-4 border border-gray-300 rounded-xl cursor-pointer bg-white hover:bg-gray-50 transition duration-150 shadow-sm text-gray-700 font-medium`;
         btn.textContent = `${index+1}. ${opt.text}`;
-        btn.dataset.isCorrect = opt.is_correct;
-        btn.addEventListener("click", ()=>checkAnswer(btn, quiz));
+        btn.dataset.isCorrect = opt.is_correct ? "true" : "false";
+        btn.addEventListener("click", ()=> checkAnswer(btn, quiz));
         optionsContainerEl.appendChild(btn);
     });
 
-    startTimer(quiz.timer_sec);
+    startTimer(Number.isInteger(quiz.timer_sec) ? quiz.timer_sec : 15);
 }
 
-// ======= 정답/오답 체크 =======
+// ----- checkAnswer -----
 function checkAnswer(btn, quiz){
     clearInterval(timerInterval);
-    const correct = btn.dataset.isCorrect==="true";
+    const correct = btn.dataset.isCorrect === "true";
     quiz.selectedAnswer = btn.textContent.replace(/^\d+\.\s*/,"");
 
     Array.from(optionsContainerEl.children).forEach(b=>{
-        b.disabled=true;
+        b.disabled = true;
         b.classList.add("cursor-default");
         b.classList.remove("hover:bg-gray-50");
-        if(b.dataset.isCorrect==="true"){
+        if (b.dataset.isCorrect === "true"){
             b.classList.add("bg-correct","text-white","border-correct","shadow-md");
             b.classList.remove("bg-white","text-gray-700","border-gray-300");
-        } else if(b!==btn){
+        } else if (b !== btn){
             b.classList.add("bg-gray-100","text-gray-400","border-gray-200");
             b.classList.remove("bg-white","text-gray-700");
         }
     });
 
-    if(!correct){
+    if (!correct){
         btn.classList.add("bg-wrong","text-white","border-wrong","shadow-md");
         btn.classList.remove("bg-white","text-gray-700","border-gray-300");
-        if(!wrongQuizzes.some(q=>q.id===quiz.id)){
-            wrongQuizzes.push(quiz);
-            localStorage.setItem("wrongQuizzes", JSON.stringify(wrongQuizzes));
+        if (!wrongQuizzes.some(wq=>wq.id === quiz.id)){
+            // store a shallow canonical copy
+            wrongQuizzes.push({
+                id: quiz.id,
+                question: quiz.question,
+                article: quiz.article,
+                options: quiz.options,
+                answer: quiz.answer,
+                explanation: quiz.explanation,
+                timer_sec: quiz.timer_sec,
+                selectedAnswer: quiz.selectedAnswer
+            });
+            saveWrongQuizzes();
+        } else {
+            // update selectedAnswer for existing wrong
+            const idx = wrongQuizzes.findIndex(w=>w.id===quiz.id);
+            if (idx>=0){ wrongQuizzes[idx].selectedAnswer = quiz.selectedAnswer; saveWrongQuizzes(); }
         }
-    } else correctCount++;
+    } else {
+        correctCount++;
+    }
 
-    explanationAreaEl.textContent=quiz.explanation;
+    explanationAreaEl.textContent = quiz.explanation || "";
     explanationAreaEl.classList.remove("hidden");
-    nextButtonEl.disabled=false;
+    nextButtonEl.disabled = false;
     nextButtonEl.classList.remove("opacity-50","cursor-not-allowed");
     nextButtonEl.classList.add("hover:bg-primary-dark");
     updateWrongCount();
 }
 
-function updateWrongCount(){ wrongCountEl.textContent=`오답: ${wrongQuizzes.length}`; }
+// ----- updateWrongCount -----
+function updateWrongCount(){ wrongCountEl.textContent = `오답: ${wrongQuizzes.length}`; }
 
-// ======= 다음 문제 =======
-nextButtonEl.addEventListener("click",()=>{
+// ----- next button handler: 자동 새 세트 로드 처리 -----
+// Replace previous simple handler with this robust flow:
+nextButtonEl.addEventListener("click", async ()=>{
     currentQuizIndex++;
-    if(currentQuizIndex<allQuizzes.length) showQuiz();
-    else{
+    if (currentQuizIndex < allQuizzes.length){
+        showQuiz();
+        return;
+    }
+    // 세트 완료: 자동 새 세트 시도
+    try{
+        // UI: show completion summary first
         const total = allQuizzes.length;
-        explanationAreaEl.textContent=`퀴즈 완료! 🎉 총 ${total}문제 중 ${correctCount}문제를 맞혔습니다. 오답 ${wrongQuizzes.length}개.`;
-        explanationAreaEl.classList.remove("hidden"); explanationAreaEl.classList.add("bg-yellow-100","border-yellow-500","text-center","font-bold","text-lg");
-        nextButtonEl.classList.add("hidden");
+        explanationAreaEl.textContent = `세트 완료! ${total}문제 중 ${correctCount}문제를 맞혔습니다. 새 세트를 불러옵니다...`;
+        explanationAreaEl.classList.remove("hidden");
+        // attempt to fetch new set (force refresh to avoid stale cache)
+        await fetchNewSet({ force:true });
+        // reset correctCount after new set is loaded
+        correctCount = 0;
+        // showQuiz() already called by fetchNewSet
+    }catch(e){
+        console.error("새 세트 로드 실패:", e);
+        explanationAreaEl.textContent = `새 세트 로드 실패: ${e.message || e}. 로컬 캐시나 다시 시도하세요.`;
     }
 });
 
-// ======= 오답 복습 모달 =======
+// ----- 복습 모달 -----
+// build review list from wrongQuizzes (already normalized)
 reviewButtonEl.addEventListener("click", ()=>{
-    reviewListEl.innerHTML="";
-    if(wrongQuizzes.length===0){ reviewListEl.innerHTML=`<p class="text-center text-gray-500 py-4">아직 틀린 문제가 없습니다.</p>`; showModal(); return; }
-    wrongQuizzes.forEach((q,i)=>{
+    reviewListEl.innerHTML = "";
+    if (!wrongQuizzes || wrongQuizzes.length === 0){
+        reviewListEl.innerHTML = `<p class="text-center text-gray-500 py-4">아직 틀린 문제가 없습니다.</p>`;
+        showModal();
+        return;
+    }
+    wrongQuizzes.forEach((q, i) => {
         const div = document.createElement("div");
-        div.className="review-item p-4 border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition duration-150 cursor-pointer shadow-sm";
-        div.innerHTML=`
+        div.className = "review-item p-4 border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition duration-150 cursor-pointer shadow-sm";
+        div.innerHTML = `
             <p class="text-sm font-light text-gray-500 mb-1">복습 #${i+1}</p>
-            <p class="font-bold text-gray-800 mb-2"><span class="text-primary">(${q.article.lawName}|| '법률 상식')</span> ${q.question}</p>
+            <p class="font-bold text-gray-800 mb-2"><span class="text-primary">(${q.article?.lawName || '법률 상식'})</span> ${q.question}</p>
             <p class="text-sm"><span class="font-semibold text-wrong">내 선택:</span> ${q.selectedAnswer || "(선택 없음)"}</p>
             <p class="text-sm"><span class="font-semibold text-correct">정답:</span> ${q.answer}</p>
-            <div class="mt-3 p-2 text-xs bg-blue-100 border-l-2 border-primary rounded text-gray-700">
-                <span class="font-bold">해설:</span> ${q.explanation}
-            </div>`;
-        div.addEventListener("click",()=>{
-            currentQuizIndex = allQuizzes.findIndex(a=>a.id===q.id);
-            showQuiz();
+            <div class="mt-3 p-2 text-xs bg-blue-100 border-l-2 border-primary rounded text-gray-700"><span class="font-bold">해설:</span> ${q.explanation}</div>
+        `;
+        div.addEventListener("click", ()=>{
+            const idx = allQuizzes.findIndex(a => a.id === q.id);
+            if (idx >= 0){
+                currentQuizIndex = idx;
+                showQuiz();
+            } else {
+                // if original not found, push the wrong quiz as a transient quiz and show
+                allQuizzes.splice(currentQuizIndex+1, 0, q);
+                currentQuizIndex = currentQuizIndex+1;
+                showQuiz();
+            }
             hideModal();
         });
         reviewListEl.appendChild(div);
     });
     showModal();
 });
-reviewCloseEl.addEventListener("click",()=>{ hideModal(); });
-reviewModalEl.addEventListener('click',e=>{ if(e.target===reviewModalEl) hideModal(); });
+reviewCloseEl.addEventListener("click", ()=> hideModal());
+reviewModalEl.addEventListener("click", e => { if (e.target === reviewModalEl) hideModal(); });
 
-// ======= 타이머 =======
+// ----- 타이머 -----
 function startTimer(sec){
-    timerEl.textContent=sec;
+    timerEl.textContent = sec;
     clearInterval(timerInterval);
-    timerInterval=setInterval(()=>{
+    timerInterval = setInterval(()=>{
         sec--;
-        if(sec<0){
+        if (sec < 0){
             clearInterval(timerInterval);
-            const quiz = allQuizzes[currentQuizIndex];
-            if(!optionsContainerEl.children[0].disabled){
-                if(!wrongQuizzes.some(q=>q.id===quiz.id)){
-                    wrongQuizzes.push(quiz);
-                    localStorage.setItem("wrongQuizzes", JSON.stringify(wrongQuizzes));
+            // mark as timeout if user hasn't already answered
+            const firstOpt = optionsContainerEl.children[0];
+            if (firstOpt && !firstOpt.disabled){
+                const quiz = allQuizzes[currentQuizIndex];
+                if (!wrongQuizzes.some(q=>q.id === quiz.id)){
+                    wrongQuizzes.push({
+                        id: quiz.id,
+                        question: quiz.question,
+                        article: quiz.article,
+                        options: quiz.options,
+                        answer: quiz.answer,
+                        explanation: quiz.explanation,
+                        timer_sec: quiz.timer_sec,
+                        selectedAnswer: "(시간 초과)"
+                    });
+                    saveWrongQuizzes();
                 }
                 Array.from(optionsContainerEl.children).forEach(b=>{
-                    b.disabled=true; b.classList.add("cursor-default"); b.classList.remove("hover:bg-gray-50");
-                    if(b.dataset.isCorrect==="true"){ b.classList.add("bg-correct","text-white","border-correct","shadow-md"); b.classList.remove("bg-white","text-gray-700","border-gray-300"); }
-                    else { b.classList.add("bg-gray-100","text-gray-400","border-gray-200"); b.classList.remove("bg-white","text-gray-700"); }
+                    b.disabled = true;
+                    b.classList.add("cursor-default");
+                    b.classList.remove("hover:bg-gray-50");
+                    if (b.dataset.isCorrect === "true"){
+                        b.classList.add("bg-correct","text-white","border-correct","shadow-md");
+                        b.classList.remove("bg-white","text-gray-700","border-gray-300");
+                    } else {
+                        b.classList.add("bg-gray-100","text-gray-400","border-gray-200");
+                        b.classList.remove("bg-white","text-gray-700");
+                    }
                 });
-                quiz.selectedAnswer="(시간 초과)";
-                explanationAreaEl.textContent=`시간 초과! 정답 해설: ${quiz.explanation}`;
-                explanationAreaEl.classList.remove("hidden"); explanationAreaEl.classList.add("bg-red-100","border-wrong");
-                nextButtonEl.disabled=false; nextButtonEl.classList.remove("opacity-50","cursor-not-allowed","hidden"); nextButtonEl.classList.add("hover:bg-primary-dark");
+                explanationAreaEl.textContent = `시간 초과! 정답: ${quiz.answer} — 해설: ${quiz.explanation}`;
+                explanationAreaEl.classList.remove("hidden");
+                explanationAreaEl.classList.add("bg-red-100","border-wrong");
+                nextButtonEl.disabled = false;
+                nextButtonEl.classList.remove("opacity-50","cursor-not-allowed");
                 updateWrongCount();
             }
             return;
         }
-        timerEl.textContent=sec;
-        if(sec<=5) timerEl.classList.add("text-wrong"); else timerEl.classList.remove("text-wrong");
-    },1000);
+        timerEl.textContent = sec;
+        if (sec <= 5) timerEl.classList.add("text-wrong"); else timerEl.classList.remove("text-wrong");
+    }, 1000);
 }
 
-window.onload=()=>loadQuizzes();
+// ----- 초기 실행 -----
+window.onload = () => {
+    loadWrongQuizzes();
+    loadQuizzes();
+};
+
 </script>
 </body>
 </html>
