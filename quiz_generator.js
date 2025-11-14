@@ -78,6 +78,7 @@ function normalizeQuiz(rawQuiz, id) {
         answer: rawQuiz.answer,
         explanation: rawQuiz.explanation,
         timer_sec: rawQuiz.timer_sec || 15
+        source_law_name: rawQuiz.lawName || "법률 상식" 
     };
 }
 
