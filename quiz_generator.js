@@ -47,7 +47,7 @@ JSON 스키마: {
 
   try {
     const response = await ai.models.generateContent({
-      model: process.env.MODEL,
+      model: MODEL,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: { systemInstruction, responseMimeType: "application/json" }
     });
@@ -71,7 +71,7 @@ function normalizeQuiz(rawQuiz, id) {
     answer: rawQuiz.answer,
     explanation: rawQuiz.explanation,
     timer_sec: rawQuiz.timer_sec || 15,
-    source_law_name: rawQuiz.source_law_name || "법률 상식"
+    source_law_name: rawQuiz.lawName || "법률 상식"
   };
 }
 
