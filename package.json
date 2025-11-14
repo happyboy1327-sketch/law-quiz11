@@ -1,0 +1,33 @@
+{
+  "name": "law-quiz",
+  "version": "1.0.0",
+  "main": "quiz_generator.js",
+  "type": "module",
+  "scripts": {
+    "start": "node api/quizzes.js",
+    "generate": "node generate_cached_quizzes.js"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^7.9.0",
+    "@google/genai": "^1.29.0",
+    "@google/generative-ai": "^0.24.1",
+    "axios": "^1.13.2",
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "firebase-admin": "^13.6.0",
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7"
+  },
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/happyboy1327-sketch/law-quiznew2vercload.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/happyboy1327-sketch/law-quiznew2vercload/issues"
+  },
+  "homepage": "https://github.com/happyboy1327-sketch/law-quiznew2vercload#readme"
+}
