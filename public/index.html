@@ -283,8 +283,8 @@
             return data ? JSON.parse(data) : null;
         }
 
-      // --- 1. 퀴즈 데이터 로드 ---
-async function loadQuizzes(force_reload = false) { 
+     // --- 1. 퀴즈 데이터 로드 ---
+    async function loadQuizzes(force_reload = false) { 
     const cachedData = loadQuizzesFromLocalStorage();
     const cachedProgress = loadProgressFromLocalStorage();
     
@@ -305,7 +305,6 @@ async function loadQuizzes(force_reload = false) {
         
         questionTextEl.textContent = "🚀 퀴즈 서버에서 새로운 데이터를 불러오는 중...";
         try {
-            // ✅ 캐시 무시 옵션 추가
             const response = await fetch(QUIZ_API_URL, { cache: "no-store" });
             if (!response.ok) throw new Error(`HTTP 오류! 상태: ${response.status}`);
             
@@ -321,7 +320,7 @@ async function loadQuizzes(force_reload = false) {
             
         } catch (error) {
             console.error("퀴즈 로드 실패:", error);
-            questionTextEl.textContent = `❌ 퀴즈 로드 실패: ${error.message}. Vercel 환경 변수(API 키) 설정 또는 서버 상태를 확인해 주세요.`;
+            questionTextEl.textContent = `❌ 퀴즈 로드 실패: ${error.message}`;
             timerEl.textContent = "오류";
             return;
         }
@@ -330,13 +329,18 @@ async function loadQuizzes(force_reload = false) {
     totalQuizCountEl.textContent = allQuizzes.length;
     correctCountEl.textContent = correctCount;
 
-    if (currentQuizIndex >= allQuizzes.length && !force_reload) {
-        showResults();
+    // 🔹 여기서 바로 문제 표시
+    if (allQuizzes.length > 0 && currentQuizIndex < allQuizzes.length) {
+        showQuiz();
+    } else {
+        console.warn("⚠️ 로드된 퀴즈가 없거나 현재 인덱스가 범위를 벗어남.");
+     }    
     }
-}
 
-// --- 2. 퀴즈 표시 ---
-function showQuiz() {
+    // --- 2. 퀴즈 표시 ---
+    function showQuiz() {
+    if (!allQuizzes[currentQuizIndex]) return;
+
     quizContainerEl.style.display = 'block';
     resultScreenEl.style.display = 'none';
     reviewScreenEl.style.display = 'none';
@@ -346,7 +350,8 @@ function showQuiz() {
     explanationAreaEl.style.display = 'none'; 
     
     const quiz = allQuizzes[currentQuizIndex];
-    
+    console.log("📌 현재 문제:", quiz);  // debug
+
     currentQuizIndexEl.textContent = currentQuizIndex + 1;
     questionTextEl.innerHTML = `<span style="color: var(--secondary-color);">(${quiz.source_law_name})</span> ${quiz.question}`;
     optionsContainerEl.innerHTML = '';
@@ -362,7 +367,7 @@ function showQuiz() {
     
     nextButtonEl.textContent = (currentQuizIndex < allQuizzes.length - 1) ? "다음 문제로 이동" : "결과 보기";
     startTimer(quiz.timer_sec || 15);
-}
+    }
         
         // --- 3. 정답 확인 및 피드백 (로컬 스토리지에 영구 저장) ---
         function checkAnswer(selectedButton, quiz) {
